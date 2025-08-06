@@ -8,7 +8,7 @@ class Soil:
     """
     --------------------------------------------------------------------------------------CHANGES IMPLEMENTED BY KADE FLYNN AUGUST 2025:
     --------------------------------------------------------------------------------------
-    - Add attribute is_calcarous, a boolean designating if soil is calcareous (True) or non-calcareous (False, default)
+    - Add attribute is_calcarous, a boolean designating if soil is calcareous (True) or non-calcareous (False, default). This is used to select which Bagnall et al. (2021) pedotransfer function to use.
     - Add functions calcualte_permanent_wilting_point_shi(), calculate_field_capacity_shi(), calculate_soil_hydrolic_properties_shi() to calculate permenant wilting point and field capacity using carbon-sensitive pedotransfer functions published in Bagnall et al. (2021)
     - Add function add_layer_from_texture_shi() to add layer from texture using Bagnall et al. (2021) pedotransfer functions
     --------------------------------------------------------------------------------------
