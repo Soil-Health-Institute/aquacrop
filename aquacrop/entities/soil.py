@@ -6,6 +6,13 @@ from .modelConstants import ModelConstants
 
 class Soil:
     """
+    --------------------------------------------------------------------------------------CHANGES IMPLEMENTED BY KADE FLYNN AUGUST 2025:
+    --------------------------------------------------------------------------------------
+    - Add attribute is_calcarous, a boolean designating if soil is calcareous (True) or non-calcareous (False, default). This is used to select which Bagnall et al. (2021) pedotransfer function to use.
+    - Add functions calcualte_permanent_wilting_point_bagnall(), calculate_field_capacity_bagnall(), calculate_soil_hydrolic_properties_bagnall() to calculate permenant wilting point and field capacity using carbon-sensitive pedotransfer functions published in Bagnall et al. (2021)
+    - Add function add_layer_from_texture_shi() to add layer from texture using Bagnall et al. (2021) pedotransfer functions
+    --------------------------------------------------------------------------------------
+
     The Soil Class contains Paramaters and variables of the soil used in the simulation
 
     More float attributes are specified in the initialisation of the class
@@ -26,6 +33,7 @@ class Soil:
     def __init__(
         self,
         soil_type,
+        is_calcareous = False,
         dz=[0.1] * 12,
         adj_rew=1,
         rew=9.0,
@@ -48,6 +56,7 @@ class Soil:
 
         self.Name = soil_type
 
+        self.is_calcareous = is_calcareous  # boolean indicating if soil is calcareous (default is false)
         self.zSoil = sum(dz)  # Total thickness of soil profile (m)
         self.nComp = len(dz)  # Total number of soil compartments
         self.nLayer = 0  # Total number of soil layers
@@ -219,6 +228,113 @@ class Soil:
         self.profile["z_top"] = self.profile["zBot"] - self.profile.dz
         self.profile["zMid"] = (self.profile["z_top"] + self.profile["zBot"]) / 2
 
+    def calculate_permanent_wilting_point_bagnall(self, Sand, Clay, SOC, is_calcareous):
+        '''Bagnall et al. (2021). Units of pwp are mm/100mm. Units of Sand, Clay, SOC are percent.'''
+        if is_calcareous == False:
+             pwp = 7.222 + 0.296 * Clay - 0.074 * Sand - 0.309 * SOC + 0.022 * (Sand * SOC) + 0.022 * (Clay * SOC)
+        else:
+            pwp = 7.907 + 0.236 * Clay - 0.082 * Sand + 0.441 * SOC + 0.002 * (Clay * Sand)
+        
+        return pwp
+
+    def calculate_field_capacity_bagnall(self, Sand, Clay, SOC, is_calcareous):
+        ''' Bagnall et al. (2021). Units are mm/100mm. Units of Sand, Clay, SOC are percent'''
+        if is_calcareous == False:
+            fc = 37.217 - 0.140 * Clay - 0.304 * Sand - 0.222 * SOC + 0.051 * (Sand * SOC) + 0.085 * (Clay * SOC) + 0.002 * (Clay * Sand)
+        else:
+            fc = 33.351 + 0.020 * Clay - 0.446 * Sand + 1.398 * SOC + 0.052 * (Sand * SOC) - 0.077 * (Clay * SOC) + 0.011 * (Clay * Sand)
+        
+        return fc
+
+    def calculate_soil_hydraulic_properties_bagnall(self, Sand, Clay, SOC, is_calcareous, DF=1, ):
+
+        """
+        Function to calculate soil hydraulic properties, given textural inputs.
+        Calculations use pedotransfer function equations described in Saxton and Rawls (2006) for thSat and Ksat and Bagnall et al. (2021) for thWP and thF. Calculation of Ksat retains the use of Saxton and Rawls equations for thWP and thF.
+
+        """
+
+        # get OrgMat to use in Saxton and Rawls (2006) thSat calculation
+        OrgMat = SOC / 1.724
+
+
+        # water content at permanent wilting point
+        Pred_thWP = (
+            -(0.024 * Sand)
+            + (0.487 * Clay)
+            + (0.006 * OrgMat)
+            + (0.005 * Sand * OrgMat)
+            - (0.013 * Clay * OrgMat)
+            + (0.068 * Sand * Clay)
+            + 0.031
+        )
+
+        th_wp = Pred_thWP + (0.14 * Pred_thWP) - 0.02
+
+        # using bagnall et al. functions
+        th_wp_bagnall = self.calculate_permanent_wilting_point_bagnall(Sand*100, Clay*100, SOC, is_calcareous) / 100
+
+        # Water content at field capacity and saturation
+        Pred_thFC = (
+            -(0.251 * Sand)
+            + (0.195 * Clay)
+            + (0.011 * OrgMat)
+            + (0.006 * Sand * OrgMat)
+            - (0.027 * Clay * OrgMat)
+            + (0.452 * Sand * Clay)
+            + 0.299
+        )
+
+        PredAdj_thFC = Pred_thFC + (
+            (1.283 * (np.power(Pred_thFC, 2))) - (0.374 * Pred_thFC) - 0.015
+        )
+
+        Pred_thS33 = (
+            (0.278 * Sand)
+            + (0.034 * Clay)
+            + (0.022 * OrgMat)
+            - (0.018 * Sand * OrgMat)
+            - (0.027 * Clay * OrgMat)
+            - (0.584 * Sand * Clay)
+            + 0.078
+        )
+
+        PredAdj_thS33 = Pred_thS33 + ((0.636 * Pred_thS33) - 0.107)
+        Pred_thS = (PredAdj_thFC + PredAdj_thS33) + ((-0.097 * Sand) + 0.043)
+
+        pN = (1 - Pred_thS) * 2.65
+        pDF = pN * DF
+        PorosComp = (1 - (pDF / 2.65)) - (1 - (pN / 2.65))
+        PorosCompOM = 1 - (pDF / 2.65)
+
+        DensAdj_thFC = PredAdj_thFC + (0.2 * PorosComp)
+        DensAdj_thS = PorosCompOM
+
+        th_fc = DensAdj_thFC
+        th_s = DensAdj_thS
+
+        # using bagnall et al pedotransfer functions
+        th_fc_bagnall = self.calculate_field_capacity_bagnall(Sand*100, Clay*100, SOC, is_calcareous) / 100
+
+        # Saturated hydraulic conductivity (mm/day)
+        lmbda = 1 / ((np.log(1500) - np.log(33)) / (np.log(th_fc) - np.log(th_wp)))
+        Ksat = (1930 * (th_s - th_fc) ** (3 - lmbda)) * 24
+
+        # Water content at air dry
+        th_dry = th_wp_bagnall / 2
+
+        # round values
+        th_dry = round(10_000 * th_dry) / 10_000
+        th_wp_bagnall = round(1000 * th_wp_bagnall) / 1000
+        th_fc_bagnall = round(1000 * th_fc_bagnall) / 1000
+        th_s = round(1000 * th_s) / 1000
+        Ksat = round(10 * Ksat) / 10
+
+        # prevent th_s from being greater than th_fc_bagnall
+        th_s = th_fc_bagnall if th_s < th_fc_bagnall else th_s
+
+        return th_wp_bagnall, th_fc_bagnall, th_s, Ksat
+    
     def calculate_soil_hydraulic_properties(self, Sand, Clay, OrgMat, DF=1):
 
         """
@@ -297,6 +413,13 @@ class Soil:
         Ksat = round(10 * Ksat) / 10
 
         return th_wp, th_fc, th_s, Ksat
+
+    def add_layer_from_texture_bagnall(self, thickness, Sand, Clay, SOC, penetrability):
+
+        th_wp, th_fc, th_s, Ksat = self.calculate_soil_hydraulic_properties_bagnall(
+            Sand / 100, Clay / 100, SOC, self.is_calcareous)
+
+        self.add_layer(thickness, th_wp, th_fc, th_s, Ksat, penetrability)
 
     def add_layer_from_texture(self, thickness, Sand, Clay, OrgMat, penetrability):
 
