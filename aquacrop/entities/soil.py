@@ -9,7 +9,7 @@ class Soil:
     --------------------------------------------------------------------------------------CHANGES IMPLEMENTED BY KADE FLYNN AUGUST 2025:
     --------------------------------------------------------------------------------------
     - Add attribute is_calcarous, a boolean designating if soil is calcareous (True) or non-calcareous (False, default). This is used to select which Bagnall et al. (2021) pedotransfer function to use.
-    - Add functions calcualte_permanent_wilting_point_shi(), calculate_field_capacity_shi(), calculate_soil_hydrolic_properties_shi() to calculate permenant wilting point and field capacity using carbon-sensitive pedotransfer functions published in Bagnall et al. (2021)
+    - Add functions calcualte_permanent_wilting_point_bagnall(), calculate_field_capacity_bagnall(), calculate_soil_hydrolic_properties_bagnall() to calculate permenant wilting point and field capacity using carbon-sensitive pedotransfer functions published in Bagnall et al. (2021)
     - Add function add_layer_from_texture_shi() to add layer from texture using Bagnall et al. (2021) pedotransfer functions
     --------------------------------------------------------------------------------------
 
@@ -228,7 +228,7 @@ class Soil:
         self.profile["z_top"] = self.profile["zBot"] - self.profile.dz
         self.profile["zMid"] = (self.profile["z_top"] + self.profile["zBot"]) / 2
 
-    def calculate_permanent_wilting_point_shi(self, Sand, Clay, SOC, is_calcareous):
+    def calculate_permanent_wilting_point_bagnall(self, Sand, Clay, SOC, is_calcareous):
         '''Bagnall et al. (2021). Units of pwp are mm/100mm. Units of Sand, Clay, SOC are percent.'''
         if is_calcareous == False:
              pwp = 7.222 + 0.296 * Clay - 0.074 * Sand - 0.309 * SOC + 0.022 * (Sand * SOC) + 0.022 * (Clay * SOC)
@@ -237,7 +237,7 @@ class Soil:
         
         return pwp
 
-    def calculate_field_capacity_shi(self, Sand, Clay, SOC, is_calcareous):
+    def calculate_field_capacity_bagnall(self, Sand, Clay, SOC, is_calcareous):
         ''' Bagnall et al. (2021). Units are mm/100mm. Units of Sand, Clay, SOC are percent'''
         if is_calcareous == False:
             fc = 37.217 - 0.140 * Clay - 0.304 * Sand - 0.222 * SOC + 0.051 * (Sand * SOC) + 0.085 * (Clay * SOC) + 0.002 * (Clay * Sand)
@@ -246,22 +246,33 @@ class Soil:
         
         return fc
 
-    def calculate_soil_hydraulic_properties_shi(self, Sand, Clay, SOC, is_calcareous, DF=1, ):
+    def calculate_soil_hydraulic_properties_bagnall(self, Sand, Clay, SOC, is_calcareous, DF=1, ):
 
         """
         Function to calculate soil hydraulic properties, given textural inputs.
-        Calculations use pedotransfer function equations described in Saxton and Rawls (2006) for thSat and Ksat and Bagnall et al. (2021) for thWP and thFC
-
+        Calculations use pedotransfer function equations described in Saxton and Rawls (2006) for thSat and Ksat and Bagnall et al. (2021) for thWP and thF. Calculation of Ksat retains the use of Saxton and Rawls equations for thWP and thF.
 
         """
-
-        # do calculations
 
         # get OrgMat to use in Saxton and Rawls (2006) thSat calculation
         OrgMat = SOC / 1.724
 
-        # Water content at permanent wilting point
-        th_wp = self.calculate_permanent_wilting_point_shi(Sand*100, Clay*100, SOC, is_calcareous) / 100
+
+        # water content at permanent wilting point
+        Pred_thWP = (
+            -(0.024 * Sand)
+            + (0.487 * Clay)
+            + (0.006 * OrgMat)
+            + (0.005 * Sand * OrgMat)
+            - (0.013 * Clay * OrgMat)
+            + (0.068 * Sand * Clay)
+            + 0.031
+        )
+
+        th_wp = Pred_thWP + (0.14 * Pred_thWP) - 0.02
+
+        # using bagnall et al. functions
+        th_wp_bagnall = self.calculate_permanent_wilting_point_bagnall(Sand*100, Clay*100, SOC, is_calcareous) / 100
 
         # Water content at field capacity and saturation
         Pred_thFC = (
@@ -293,28 +304,36 @@ class Soil:
 
         pN = (1 - Pred_thS) * 2.65
         pDF = pN * DF
+        PorosComp = (1 - (pDF / 2.65)) - (1 - (pN / 2.65))
         PorosCompOM = 1 - (pDF / 2.65)
 
+        DensAdj_thFC = PredAdj_thFC + (0.2 * PorosComp)
         DensAdj_thS = PorosCompOM
 
-        th_fc = self.calculate_field_capacity_shi(Sand*100, Clay*100, SOC, is_calcareous) / 100
+        th_fc = DensAdj_thFC
         th_s = DensAdj_thS
+
+        # using bagnall et al pedotransfer functions
+        th_fc_bagnall = self.calculate_field_capacity_bagnall(Sand*100, Clay*100, SOC, is_calcareous) / 100
 
         # Saturated hydraulic conductivity (mm/day)
         lmbda = 1 / ((np.log(1500) - np.log(33)) / (np.log(th_fc) - np.log(th_wp)))
         Ksat = (1930 * (th_s - th_fc) ** (3 - lmbda)) * 24
 
         # Water content at air dry
-        th_dry = th_wp / 2
+        th_dry = th_wp_bagnall / 2
 
         # round values
         th_dry = round(10_000 * th_dry) / 10_000
-        th_wp = round(1000 * th_wp) / 1000
-        th_fc = round(1000 * th_fc) / 1000
+        th_wp_bagnall = round(1000 * th_wp_bagnall) / 1000
+        th_fc_bagnall = round(1000 * th_fc_bagnall) / 1000
         th_s = round(1000 * th_s) / 1000
         Ksat = round(10 * Ksat) / 10
 
-        return th_wp, th_fc, th_s, Ksat
+        # prevent th_s from being greater than th_fc_bagnall
+        th_s = th_fc_bagnall if th_s < th_fc_bagnall else th_s
+
+        return th_wp_bagnall, th_fc_bagnall, th_s, Ksat
     
     def calculate_soil_hydraulic_properties(self, Sand, Clay, OrgMat, DF=1):
 
@@ -395,9 +414,9 @@ class Soil:
 
         return th_wp, th_fc, th_s, Ksat
 
-    def add_layer_from_texture_shi(self, thickness, Sand, Clay, SOC, penetrability):
+    def add_layer_from_texture_bagnall(self, thickness, Sand, Clay, SOC, penetrability):
 
-        th_wp, th_fc, th_s, Ksat = self.calculate_soil_hydraulic_properties_shi(
+        th_wp, th_fc, th_s, Ksat = self.calculate_soil_hydraulic_properties_bagnall(
             Sand / 100, Clay / 100, SOC, self.is_calcareous)
 
         self.add_layer(thickness, th_wp, th_fc, th_s, Ksat, penetrability)
