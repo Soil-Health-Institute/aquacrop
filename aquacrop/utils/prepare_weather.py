@@ -114,10 +114,17 @@ def prepare_weather_minimum_data(weather_file_path: str, latitude: float, longit
         vapor_pressure=weather_df['VaporPressure'],
         saturated_vapor_pressure=weather_df['SatVaporPressure'],
         delta=weather_df['Delta'],
-        Tmean = weather_df['MeanTemp'])
+        mean_temperature = weather_df['MeanTemp'])
 
     # set limit on ET0 to avoid divide by zero errors
     weather_df['ReferenceET'] = weather_df['ReferenceET'].clip(lower=0.1)
+    weather_df['ReferenceET'] = pd.to_numeric(weather_df['ReferenceET']).round(2)
+
+    columns_to_keep = ['MinTemp', 'MaxTemp', 'Precipitation', 'ReferenceET', 'Date']
+
+    weather_df = weather_df[columns_to_keep]
+
+    weather_df['Date'] = pd.to_datetime(weather_df['Date'])
 
     return weather_df
 
@@ -159,7 +166,9 @@ def calculate_reference_et(net_radiation: float, vapor_pressure: float, saturate
 
     denominator = delta + psychrometric_constant * (1 + 0.34 * wind_speed)
 
-    return numerator / denominator
+    reference_et = numerator / denominator
+
+    return reference_et
 
 def calculate_net_radiation(mean_temperature, solar_radiation, vapor_pressure, saturated_vapor_pressure, delta, year_day, latitude, longitude, elevation):
     '''
