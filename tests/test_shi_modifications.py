@@ -108,6 +108,15 @@ def create_custom_soil_profile(
         #       f"Silt={100-sand_list[i]-clay_list[i]}%, "
         #       f"SOC={soc_list[i]}%, "
         #       f"Penetrability={penetrability_list[i]}")
+
+    # overwrite tau calculation
+    soil.profile['tau'] = 1
+
+    # calulate REW as in DRC
+    surface_fc = soil.profile['th_fc'][0]
+    surface_dry = soil.profile['th_dry'][0]
+    soil.rew = 1000 * (surface_fc - surface_dry) * 0.04
+
     
     return soil
 
@@ -301,16 +310,17 @@ def analyze_soil_health_impacts(weather_data: pd.DataFrame,
     
 # results, soils = analyze_soil_health_impacts(weather_data = weather_data,
 #                             depth_increments = [0.15]*10,
-#                             sand_profile = [10]*10,
-#                             clay_profile = [45]*10,
+#                             sand_profile = [65]*10,
+#                             clay_profile = [15]*10,
 #                             soc_profile = [1]*10,
 #                             crop = 'Maize',
 #                             planting_date = '04/15',
-#                             year =1988,
+#                             year =2007,
 #                             soc_increase = 1,
-#                             residue_cover = 90)
+#                             residue_cover = 60)
 
-# print(results)
+# print(results['base_flux_df'])
+# results['base_flux_df'].to_csv("C:/Users/KadeFlynn/OneDrive - Soil Health Institute/Documents/aquacrop tests/aquacrop_base_flux_2007_sl_maxtau.csv", index=False)
 
 # # create plot of paw in soil profile
 # fig,ax=plt.subplots(1,1,figsize=(13,8))
@@ -574,9 +584,9 @@ if __name__ == "__main__":
         years=years,
         soil_scenarios=soil_scenarios,
         soil_health_scenarios=health_scenarios,
-        crop="Cotton",
+        crop="Maize",
         planting_date="04/15",
-        output_csv_path="C:/Users/KadeFlynn/OneDrive - Soil Health Institute/Documents/aquacrop tests/soil_health_analysis_results_cotton.csv"
+        output_csv_path="C:/Users/KadeFlynn/OneDrive - Soil Health Institute/Documents/aquacrop tests/soil_health_analysis_results_maxtau_rewcalc.csv"
     )
     
     # Display summary statistics
