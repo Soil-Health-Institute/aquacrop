@@ -2,8 +2,8 @@ from aquacrop.utils import get_filepath, prepare_weather, prepare_weather_minimu
 
 import pandas as pd
 
-import pydaymet
-import pygridmet
+#import pydaymet
+#import pygridmet
 
 # read in aquacrop example data
 filepath_1 = get_filepath('champion_climate.txt')
