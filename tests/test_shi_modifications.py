@@ -9,13 +9,6 @@ import numpy as np
 from itertools import product
 import warnings
 
-## Prepare weather data
-filepath = get_filepath('weather_minimum_lat38.9_lon-83.9_elev291.csv')
-weather_data = prepare_weather_minimum_data(weather_file_path = filepath,
-                                       latitude = 38.9,
-                                       longitude = -83.9,
-                                       elevation = 291)
-
 ## Prepare Soil data
 def create_custom_soil_profile(
     sand_list,
@@ -278,7 +271,7 @@ def analyze_soil_health_impacts(weather_data: pd.DataFrame,
         for i in range(n_layers):
             if soil_penetrability[i] == 0:
                 water_df[f'th{i+1}'] = 0
-                soil_profile['th_wp'][i] = 0
+                soil_profile.loc[i, 'th_wp'] = 0
         
         # Calculate water content in mm for each layer
         for i in range(1, n_layers+1):
@@ -483,17 +476,27 @@ def run_multiyear_analysis(
             result_row['surface_clay'] = soil_scenario['clay_profile'][0]
 
             # Plot and save figure for weekly PAW
-            fig, ax = plt.subplots(figsize=(10, 6))
-            bar_width = 0.4
-            weeks = np.array(weekly_base['week'])
+            weeks_base = np.array(weekly_base['week'])
+            weeks_soilhealth = np.array(weekly_health['week'])
             paw_base = np.array(weekly_base['paw base']) / 10
             paw_soilhealth = np.array(weekly_health['paw soilhealth']) / 10
-            ax.bar(weeks - bar_width/2, paw_base, width=bar_width, color='#CBA052', label='Conventional')
-            ax.bar(weeks + bar_width/2, paw_soilhealth, width=bar_width, color='#4DACDA', label='Soil Health')
+            min_len = min(len(weeks_base), len(weeks_soilhealth), len(paw_base), len(paw_soilhealth))
+            weeks_base = weeks_base[:min_len]
+            weeks_soilhealth = weeks_soilhealth[:min_len]
+            paw_base = paw_base[:min_len]
+            paw_soilhealth = paw_soilhealth[:min_len]
+
+            fig, ax = plt.subplots(figsize=(10, 6))
+            bar_width = 0.4
+            ax.bar(weeks_soilhealth + bar_width/2, paw_soilhealth, width=bar_width, color='#4DACDA', label='Soil Health')
+            ax.bar(weeks_base - bar_width/2, paw_base, width=bar_width, color='#CBA052', label='Conventional')
             ax.set_xlabel('Week after planting')
             ax.set_ylabel('Plant Available Water (cm)')
+            ax.set_title(f'Weekly Plant Available Water\n{name} - {crop} - {year} - {soil_scenario["name"]} - {health_scenario["name"]}')
             ax.legend()
+            ax.set_xticks(weeks_soilhealth)
             fig.tight_layout()
+            
             try:
                 fig.savefig(f'{output_path}/weekly_paw_{name}_{crop}_{year}_{soil_scenario["name"]}_{health_scenario["name"]}.png')
                 plt.close(fig)
@@ -638,29 +641,30 @@ def create_soil_health_scenarios() -> List[Dict]:
 # Example usage
 if __name__ == "__main__":
     # Load weather data (using your existing code)
-    filepath = get_filepath('weather_minimum_lat38.9_lon-83.9_elev291.csv')
+    #filepath = get_filepath('weather_minimum_lat38.9_lon-83.9_elev291.csv')
+    filepath = get_filepath('C:/Users/KadeFlynn/OneDrive - Soil Health Institute/Documents/aquacrop tests/weather_arkansas_lat35.91_long-90.68_elev122.csv')
     weather_data = prepare_weather_minimum_data(
         weather_file_path=filepath,
-        latitude=38.9,
-        longitude=-83.9,
-        elevation=291
+        latitude=35.9,
+        longitude=-90.68,
+        elevation=122
     )
     
     # Define analysis parameters
-    years = [2007]  # Multiple years
+    years = [1999, 2012]  # Multiple years
     #years = list(range(1988, 2019))
     soil_scenarios = create_soil_texture_scenarios()  # Different soil types
     health_scenarios = create_soil_health_scenarios()  # Different health treatments
     
     # Run comprehensive analysis
     results_df = run_multiyear_analysis(
-        name = "Ohio",
+        name = "Arkansas",
         weather_data=weather_data,
         years=years,
         soil_scenarios=soil_scenarios,
         soil_health_scenarios=health_scenarios,
         crop="Maize",
-        planting_date="04/15",
+        planting_date="04/20",
         output_path="C:/Users/KadeFlynn/OneDrive - Soil Health Institute/Documents/aquacrop tests/"
     )
     
@@ -690,21 +694,24 @@ if __name__ == "__main__":
     print(results_df[['year', 'soil_scenario', 'health_scenario', 
                      'transpiration_diff', 'evaporation_diff']].head(10))
     
-    # # Example of running a single year analysis
+    # # # Example of running a single year analysis
     # results, soils = analyze_soil_health_impacts(weather_data = weather_data,
     #                         depth_increments = [0.15]*10,
     #                         sand_profile = [20]*10,
     #                         clay_profile = [15]*10,
     #                         soc_profile = [1]*10,
     #                         crop = 'Maize',
-    #                         planting_date = '04/10',
-    #                         year =2007,
-    #                         soc_increase = 0.25,
-    #                         residue_cover = 30,
-    #                         #penetrability_profile= [100]*4 + [0]*6)
-    #                         penetrability_profile= [100]*10)
+    #                         planting_date = '05/01',
+    #                         year =2003,
+    #                         soc_increase = 10,
+    #                         residue_cover = 90,
+    #                         penetrability_profile= [100]*3 + [0]*7)
+    #                         #penetrability_profile= [100]*10)
 
-    # print(results['evaporation_difference'] / results['base_evaporation_total'] * 100)
+    # print(results)
+    # print(results['base_flux_df'])
+    # print(results['base_water_df'])
+    # print(soils['soil_base'].profile)
     # drought_resilience = calculate_drought_resilience(results)
     # print(drought_resilience)
     # print(soils)
@@ -728,7 +735,7 @@ if __name__ == "__main__":
     # # show plot
     # fig.show()  
 
-    # create plot of root growth
+    # #create plot of root growth
     # fig,ax=plt.subplots(1,1,figsize=(13,8))
     # # plot results
     # #ax.scatter(results['health_crop_growth_df']['dap'], results['health_crop_growth_df']['z_root'], color = 'lightskyblue')
@@ -739,3 +746,13 @@ if __name__ == "__main__":
     # # show plot
     # fig.show()  
     
+    # #create plot of transpiration
+    # fig,ax=plt.subplots(1,1,figsize=(13,8))
+    # # plot results
+    # #ax.scatter(results['health_crop_growth_df']['dap'], results['health_crop_growth_df']['z_root'], color = 'lightskyblue')
+    # ax.scatter(results['base_flux_df']['dap'], results['base_flux_df']['Tr'], color = 'khaki')
+    # # labels
+    # ax.set_xlabel('Day after planting)',fontsize=18)
+    # ax.set_ylabel('Transpiration (mm)',fontsize=18)
+    # # show plot
+    # fig.show() 
