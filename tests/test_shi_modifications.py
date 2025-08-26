@@ -9,15 +9,7 @@ import numpy as np
 from itertools import product
 import warnings
 
-## Prepare weather data
-filepath = get_filepath('weather_minimum_lat38.9_lon-83.9_elev291.csv')
-weather_data = prepare_weather_minimum_data(weather_file_path = filepath,
-                                       latitude = 38.9,
-                                       longitude = -83.9,
-                                       elevation = 291)
-
 ## Prepare Soil data
-
 def create_custom_soil_profile(
     sand_list,
     clay_list,
@@ -108,6 +100,15 @@ def create_custom_soil_profile(
         #       f"Silt={100-sand_list[i]-clay_list[i]}%, "
         #       f"SOC={soc_list[i]}%, "
         #       f"Penetrability={penetrability_list[i]}")
+
+    # overwrite tau calculation
+    soil.profile['tau'] = 1
+
+    # calulate REW as in DRC
+    surface_fc = soil.profile['th_fc'][0]
+    surface_dry = soil.profile['th_dry'][0]
+    soil.rew = 1000 * (surface_fc - surface_dry) * 0.04
+
     
     return soil
 
@@ -121,7 +122,8 @@ def analyze_soil_health_impacts(weather_data: pd.DataFrame,
                                 planting_date: str,
                                 year: int,
                                 soc_increase: float,
-                                residue_cover: int):
+                                residue_cover: int,
+                                penetrability_profile: List[float] = None):
     '''
         Analyze the impact of soil health improvements on transpiration, evaporation, and soil water.
     
@@ -162,6 +164,11 @@ def analyze_soil_health_impacts(weather_data: pd.DataFrame,
     '''
 
     ## create soil profiles
+    if penetrability_profile is None:
+        penetrability_profile = [100] * len(sand_profile)
+        zres = -999
+    else:
+        zres = 0.6
     # Get SOC profile for soil health soil
     soc_profile_health = soc_profile.copy()
     soc_profile_health[0] = soc_profile[0] + soc_increase
@@ -171,7 +178,7 @@ def analyze_soil_health_impacts(weather_data: pd.DataFrame,
                                            clay_list = clay_profile,
                                            soc_list = soc_profile,
                                            layer_thickness_list= depth_increments,
-                                           penetrability_list = [100]*len(sand_profile),
+                                           penetrability_list = penetrability_profile,
                                            is_calcareous=False,
                                            rew=9,
                                            z_res=-999)
@@ -179,10 +186,12 @@ def analyze_soil_health_impacts(weather_data: pd.DataFrame,
                                            clay_list = clay_profile,
                                            soc_list = soc_profile_health,
                                            layer_thickness_list= depth_increments,
-                                           penetrability_list = [100]*len(sand_profile),
+                                           penetrability_list = penetrability_profile,
                                            is_calcareous=False,
                                            rew=9,
-                                           z_res=-999)
+                                           z_res=zres)
+    soil_base.profile['th_dry'] = 0
+    soil_health.profile['th_dry'] = 0
     
     # create crop object
     crop = Crop(c_name = crop, planting_date = planting_date)
@@ -224,7 +233,7 @@ def analyze_soil_health_impacts(weather_data: pd.DataFrame,
     # print input data
     print(f"Simulation start date is {sim_start}"
           f" Simulation end date is {sim_end}"
-          f" Crop planting date 9s {crop.planting_date}")
+          f" Crop planting date is {crop.planting_date}")
 
     # run models
     model_base.run_model(till_termination=True)
@@ -256,12 +265,19 @@ def analyze_soil_health_impacts(weather_data: pd.DataFrame,
     def calculate_water_totals(water_df, soil_profile, n_layers, layer_thickness_mm):
         """Calculate total water content for all layers"""
         water_df = water_df.copy()
+
+        # Set water content to zero for layers with zero penetrability
+        soil_penetrability = soil_profile['penetrability'].values
+        for i in range(n_layers):
+            if soil_penetrability[i] == 0:
+                water_df[f'th{i+1}'] = 0
+                soil_profile.loc[i, 'th_wp'] = 0
         
         # Calculate water content in mm for each layer
         for i in range(1, n_layers+1):
             water_df[f'th{i}_mm'] = water_df[f'th{i}'] * layer_thickness_mm[i-1]
         # Calculate wilting point in mm for each layer
-        soil_profile[f'th_wp_mm'] = soil_profile[f'th_wp'] * layer_thickness_mm[i-1]
+        soil_profile['th_wp_mm'] = soil_profile['th_wp'] * pd.Series(layer_thickness_mm)
         th_wp_total_mm = soil_profile['th_wp_mm'].sum(axis=0)
         # Calculate total water content
         th_columns = [f'th{i}_mm' for i in range(1, n_layers+1)]
@@ -298,58 +314,65 @@ def analyze_soil_health_impacts(weather_data: pd.DataFrame,
     }
     
     return results, soils
-    
-# results, soils = analyze_soil_health_impacts(weather_data = weather_data,
-#                             depth_increments = [0.15]*10,
-#                             sand_profile = [10]*10,
-#                             clay_profile = [45]*10,
-#                             soc_profile = [1]*10,
-#                             crop = 'Maize',
-#                             planting_date = '04/15',
-#                             year =1988,
-#                             soc_increase = 1,
-#                             residue_cover = 90)
+def calculate_drought_resilience(result: Dict):
+    '''
+    Replicate outputs of Drought Resilience Calculator: 1) Decrease in evaporation due to soil health management, 2) Increase in transpiration from soil health management, 3) and weekly average plant available water for baseline and soil health management scenarios. 
 
-# print(results)
+    Parameters:
+    -----------
+    result: Dict
+        Dictionary containing results from analyze_soil_health_impacts function.
+   
+    Returns:
+    --------
+    Dict containing:
+        - weekly_plant_available_water_base: Weekly average plant available water for baseline scenario
+        - weekly_plant_available_water_health: Weekly average plant available water for soil health management scenario
+        - seasonal_summary: Dictionary with seasonal differences in evaporation and transpiration
+    '''
+    weekly_plant_available_water_base = return_weekly_plant_available_water(result['base_water_df'], 'base')
+    weekly_plant_available_water_health = return_weekly_plant_available_water(result['health_water_df'], 'soilhealth')
 
-# # create plot of paw in soil profile
-# fig,ax=plt.subplots(1,1,figsize=(13,8))
-# # plot results
-# ax.bar(results['health_water_df']['dap'], results['health_water_df']['paw_total_mm'] / 25.4, color = 'lightskyblue')
-# ax.bar(results['base_water_df']['dap'], results['base_water_df']['paw_total_mm'] / 25.4, color = 'khaki')
-# # labels
-# ax.set_xlabel('Day after planting)',fontsize=18)
-# ax.set_ylabel('Plant Available Water (in)',fontsize=18)
-# #limits
-# ax.set_ylim(min(results['base_water_df']['paw_total_mm'] / 25.4), max(results['health_water_df']['paw_total_mm'] / 25.4))
-# # show plot
-# fig.show()  
+    # calculate seasonal statistics
+    seasonal_summary = {
+        'seasonal_evaporation_difference': result['evaporation_difference'],
+        'seasonal_transpiration_difference': result['transpiration_difference'],
+        'seasonal_evaporation_baseline': result['base_evaporation_total'],
+        'seasonal_transpiration_baseline': result['base_transpiration_total'],
+        'seasonal_evaporation_percent_difference': result['evaporation_difference'] / result['base_evaporation_total'] * 100,
+        'seasonal_transpiration_percent_difference': result['transpiration_difference'] / result['base_transpiration_total'] * 100
+    }
+    seasonal_summary = {k: round(v, 2) for k, v in seasonal_summary.items()}
+    return(weekly_plant_available_water_base,
+           weekly_plant_available_water_health,
+           seasonal_summary)
 
-# # create plot of root growth
-# fig,ax=plt.subplots(1,1,figsize=(13,8))
-# # plot results
-# #ax.scatter(results['health_crop_growth_df']['dap'], results['health_crop_growth_df']['z_root'], color = 'lightskyblue')
-# ax.scatter(results['base_water_df']['dap'], results['base_water_df']['z_root'], color = 'khaki')
-# # labels
-# ax.set_xlabel('Day after planting)',fontsize=18)
-# ax.set_ylabel('Root Depth (m)',fontsize=18)
-# # show plot
-# fig.show()  
+def return_weekly_plant_available_water(water_df: pd.DataFrame, management: str) -> Dict[str, List[float]]:
+    dap = water_df['dap'].values.tolist()
+    daily_paw = water_df['paw_total_mm'].values.tolist()
+    num_weeks = len(dap) // 7
+    weeks = [week for week in range(1, num_weeks + 2)]
+    weekly_paw = [sum(daily_paw[i:i+7]) / len(daily_paw[i:i+7]) for i in range(0, len(daily_paw), 7)]
+    weekly_paw = [round(paw, 0) for paw in weekly_paw]
+    return {'week': weeks, f'paw {management}': weekly_paw}
 
 def run_multiyear_analysis(
+    name: str,
     weather_data: pd.DataFrame,
     years: List[int],
     soil_scenarios: List[Dict],
     soil_health_scenarios: List[Dict],
     crop: str = "Soybean",
     planting_date: str = "04/20",
-    output_csv_path: str = None
+    output_path: str = None
 ) -> pd.DataFrame:
     """
     Run multi-year analysis across multiple soil scenarios and soil health treatments.
     
     Parameters:
     -----------
+    name : str
+        Name of the analysis (for logging purposes) (E.g., "Ohio Maize")
     weather_data : pd.DataFrame
         Weather data formatted for AquaCrop
     years : List[int]
@@ -370,7 +393,7 @@ def run_multiyear_analysis(
         Crop type
     planting_date : str
         Planting date in 'MM/DD' format
-    output_csv_path : str, optional
+    output_path : str, optional
         Path to save results CSV file
         
     Returns:
@@ -406,10 +429,29 @@ def run_multiyear_analysis(
                 planting_date=planting_date,
                 year=year,
                 soc_increase=health_scenario['soc_increase'],
-                residue_cover=health_scenario['residue_cover']
+                residue_cover=health_scenario['residue_cover'],
+                penetrability_profile=soil_scenario.get('penetrability_profile', None)
             )
-            
-            # Store results
+
+            # Calculate drought resilience and get weekly paw
+            weekly_base, weekly_health, seasonal_summary = calculate_drought_resilience(results)
+
+            # result_row = {
+            #     'year': year,
+            #     'soil_scenario': soil_scenario['name'],
+            #     'health_scenario': health_scenario['name'],
+            #     'soc_increase': health_scenario['soc_increase'],
+            #     'residue_cover': health_scenario['residue_cover'],
+            #     'transpiration_diff': results['transpiration_difference'],
+            #     'evaporation_diff': results['evaporation_difference'],
+            #     'base_transpiration': results['base_transpiration_total'],
+            #     'health_transpiration': results['health_transpiration_total'],
+            #     'base_evaporation': results['base_evaporation_total'],
+            #     'health_evaporation': results['health_evaporation_total'],
+            #     'transpiration_pct_change': ((results['health_transpiration_total'] - results['base_transpiration_total']) / results['base_transpiration_total']) * 100,
+            #     'evaporation_pct_change': ((results['health_evaporation_total'] - results['base_evaporation_total']) / results['base_evaporation_total']) * 100
+            # }
+
             result_row = {
                 'year': year,
                 'soil_scenario': soil_scenario['name'],
@@ -423,28 +465,43 @@ def run_multiyear_analysis(
                 'base_evaporation': results['base_evaporation_total'],
                 'health_evaporation': results['health_evaporation_total'],
                 'transpiration_pct_change': ((results['health_transpiration_total'] - results['base_transpiration_total']) / results['base_transpiration_total']) * 100,
-                'evaporation_pct_change': ((results['health_evaporation_total'] - results['base_evaporation_total']) / results['base_evaporation_total']) * 100
+                'evaporation_pct_change': ((results['health_evaporation_total'] - results['base_evaporation_total']) / results['base_evaporation_total']) * 100,
+                'weekly_paw_base': weekly_base['paw base'],
+                'weekly_paw_soilhealth': weekly_health['paw soilhealth'],
+                'weeks': weekly_base['week'],
             }
-            
+
             # Add soil texture info
-            result_row['avg_sand'] = np.mean(soil_scenario['sand_profile'])
-            result_row['avg_clay'] = np.mean(soil_scenario['clay_profile'])
             result_row['surface_sand'] = soil_scenario['sand_profile'][0]
             result_row['surface_clay'] = soil_scenario['clay_profile'][0]
+
+            # Plot and save figure for weekly PAW
+            weeks_base = np.array(weekly_base['week'])
+            weeks_soilhealth = np.array(weekly_health['week'])
+            paw_base = np.array(weekly_base['paw base']) / 10
+            paw_soilhealth = np.array(weekly_health['paw soilhealth']) / 10
+            min_len = min(len(weeks_base), len(weeks_soilhealth), len(paw_base), len(paw_soilhealth))
+            weeks_base = weeks_base[:min_len]
+            weeks_soilhealth = weeks_soilhealth[:min_len]
+            paw_base = paw_base[:min_len]
+            paw_soilhealth = paw_soilhealth[:min_len]
+
+            fig, ax = plt.subplots(figsize=(10, 6))
+            bar_width = 0.4
+            ax.bar(weeks_soilhealth + bar_width/2, paw_soilhealth, width=bar_width, color='#4DACDA', label='Soil Health')
+            ax.bar(weeks_base - bar_width/2, paw_base, width=bar_width, color='#CBA052', label='Conventional')
+            ax.set_xlabel('Week after planting')
+            ax.set_ylabel('Plant Available Water (cm)')
+            ax.set_title(f'Weekly Plant Available Water\n{name} - {crop} - {year} - {soil_scenario["name"]} - {health_scenario["name"]}')
+            ax.legend()
+            ax.set_xticks(weeks_soilhealth)
+            fig.tight_layout()
             
-            # Add crop performance metrics if available
-            if 'summary_stats' in results:
-                base_stats = results['summary_stats']['base']
-                health_stats = results['summary_stats']['health']
-                
-                result_row['base_yield'] = base_stats.get('Yield (tonne/ha)', [np.nan])[0]
-                result_row['health_yield'] = health_stats.get('Yield (tonne/ha)', [np.nan])[0]
-                result_row['yield_diff'] = result_row['health_yield'] - result_row['base_yield']
-                
-                if result_row['base_yield'] > 0:
-                    result_row['yield_pct_change'] = (result_row['yield_diff'] / result_row['base_yield']) * 100
-                else:
-                    result_row['yield_pct_change'] = np.nan
+            try:
+                fig.savefig(f'{output_path}/weekly_paw_{name}_{crop}_{year}_{soil_scenario["name"]}_{health_scenario["name"]}.png')
+                plt.close(fig)
+            except Exception as e:
+                print(f"Error saving figure: {str(e)}")
             
             results_list.append(result_row)
             
@@ -468,9 +525,9 @@ def run_multiyear_analysis(
     print(f"\nAnalysis complete! Generated {len(results_df)} result rows")
     
     # Save to CSV if path provided
-    if output_csv_path:
-        results_df.to_csv(output_csv_path, index=False)
-        print(f"Results saved to: {output_csv_path}")
+    if output_path:
+        results_df.to_csv(f'{output_path}/{name}_{crop}_analysis_results.csv', index=False)
+        print(f"Results saved to: {output_path}")
     
     return results_df
 
@@ -494,6 +551,16 @@ def create_soil_texture_scenarios() -> List[Dict]:
         'clay_profile': [15]*10,
         'soc_profile': [1]*10
     })
+
+    # Sandy Loam, root restricting layer
+    scenarios.append({
+        'name': 'Sandy_Loam_Restricting',
+        'depth_increments': [0.15] * 10,
+        'sand_profile': [65]*10,
+        'clay_profile': [15]*10,
+        'soc_profile': [1]*10,
+        'penetrability_profile': [100, 100, 100, 100, 0, 0, 0, 0, 0, 0]
+    })
     
     # Loam
     scenarios.append({
@@ -503,14 +570,34 @@ def create_soil_texture_scenarios() -> List[Dict]:
         'clay_profile': [25]*10,
         'soc_profile': [1]*10
     })
+
+    # Loam, root restricting layer
+    scenarios.append({
+        'name': 'Loam_Restricting',
+        'depth_increments': [0.15] * 10,
+        'sand_profile': [40]*10,
+        'clay_profile': [25]*10,
+        'soc_profile': [1]*10,
+        'penetrability_profile': [100, 100, 100, 100, 0, 0, 0, 0, 0, 0]
+    })
     
     # Silty Clay
     scenarios.append({
-        'name': 'Silty Clay',
+        'name': 'Silty_Clay',
         'depth_increments': [0.15] * 10,
         'sand_profile': [10]*10,
         'clay_profile': [45]*10,
         'soc_profile': [1]*10
+    })
+
+    # Silty Clay, root restricting layer
+    scenarios.append({
+        'name': 'Silty_Clay_Restricting',
+        'depth_increments': [0.15] * 10,
+        'sand_profile': [10]*10,
+        'clay_profile': [45]*10,
+        'soc_profile': [1]*10,
+        'penetrability_profile': [100, 100, 100, 100, 0, 0, 0, 0, 0, 0]
     })
     
     return scenarios
@@ -554,29 +641,31 @@ def create_soil_health_scenarios() -> List[Dict]:
 # Example usage
 if __name__ == "__main__":
     # Load weather data (using your existing code)
-    filepath = get_filepath('weather_minimum_lat38.9_lon-83.9_elev291.csv')
+    #filepath = get_filepath('weather_minimum_lat38.9_lon-83.9_elev291.csv')
+    filepath = get_filepath('C:/Users/KadeFlynn/OneDrive - Soil Health Institute/Documents/aquacrop tests/weather_arkansas_lat35.91_long-90.68_elev122.csv')
     weather_data = prepare_weather_minimum_data(
         weather_file_path=filepath,
-        latitude=38.9,
-        longitude=-83.9,
-        elevation=291
+        latitude=35.9,
+        longitude=-90.68,
+        elevation=122
     )
     
     # Define analysis parameters
-    #years = [1988, 1989, 1990, 1991, 1992]  # Multiple years
-    years = list(range(1988, 2019))
+    years = [1999, 2012]  # Multiple years
+    #years = list(range(1988, 2019))
     soil_scenarios = create_soil_texture_scenarios()  # Different soil types
     health_scenarios = create_soil_health_scenarios()  # Different health treatments
     
     # Run comprehensive analysis
     results_df = run_multiyear_analysis(
+        name = "Arkansas",
         weather_data=weather_data,
         years=years,
         soil_scenarios=soil_scenarios,
         soil_health_scenarios=health_scenarios,
-        crop="Cotton",
-        planting_date="04/15",
-        output_csv_path="C:/Users/KadeFlynn/OneDrive - Soil Health Institute/Documents/aquacrop tests/soil_health_analysis_results_cotton.csv"
+        crop="Maize",
+        planting_date="04/20",
+        output_path="C:/Users/KadeFlynn/OneDrive - Soil Health Institute/Documents/aquacrop tests/"
     )
     
     # Display summary statistics
@@ -590,7 +679,6 @@ if __name__ == "__main__":
     health_summary = results_df.groupby('health_scenario').agg({
         'transpiration_diff': ['mean', 'std'],
         'evaporation_diff': ['mean', 'std'],
-        'yield_diff': ['mean', 'std']
     }).round(2)
     print(health_summary)
     
@@ -598,39 +686,73 @@ if __name__ == "__main__":
     soil_summary = results_df.groupby('soil_scenario').agg({
         'transpiration_diff': ['mean', 'std'],
         'evaporation_diff': ['mean', 'std'],
-        'yield_diff': ['mean', 'std']
     }).round(2)
     print(soil_summary)
     
     # Show sample of results
     print(f"\n=== SAMPLE RESULTS ===")
     print(results_df[['year', 'soil_scenario', 'health_scenario', 
-                     'transpiration_diff', 'evaporation_diff', 'yield_diff']].head(10))
+                     'transpiration_diff', 'evaporation_diff']].head(10))
     
+    # # # Example of running a single year analysis
+    # results, soils = analyze_soil_health_impacts(weather_data = weather_data,
+    #                         depth_increments = [0.15]*10,
+    #                         sand_profile = [20]*10,
+    #                         clay_profile = [15]*10,
+    #                         soc_profile = [1]*10,
+    #                         crop = 'Maize',
+    #                         planting_date = '05/01',
+    #                         year =2003,
+    #                         soc_increase = 10,
+    #                         residue_cover = 90,
+    #                         penetrability_profile= [100]*3 + [0]*7)
+    #                         #penetrability_profile= [100]*10)
 
+    # print(results)
+    # print(results['base_flux_df'])
+    # print(results['base_water_df'])
+    # print(soils['soil_base'].profile)
+    # drought_resilience = calculate_drought_resilience(results)
+    # print(drought_resilience)
+    # print(soils)
+    # drought_resilience[0]
+    # week = np.array(drought_resilience[0]['week'])
+    # paw_base = [paw/10 for paw in drought_resilience[0]['paw base']]
+    # paw_soilhealth = [paw/10 for paw in drought_resilience[1]['paw soilhealth']]
+    # print(paw_base, paw_soilhealth)
 
-print(results_df.columns)
-results_df['evaporation_pct_change']
+    # # create plot of paw in soil profile
+    # fig,ax=plt.subplots(1,1,figsize=(13,8))
+    # bar_width = 0.4
+    # # plot results
+    # ax.bar(week - bar_width/2, paw_soilhealth, width = bar_width, color = '#4DACDA')
+    # ax.bar(week + bar_width/2, paw_base, width = bar_width, color = '#CBA052')
+    # # labels
+    # ax.set_xlabel('Week after planting',fontsize=18)
+    # ax.set_ylabel('Plant Available Water (cm)',fontsize=18)
+    # #limits
+    # ax.set_ylim(min(paw_base)-1, max(paw_soilhealth) + 1)
+    # # show plot
+    # fig.show()  
 
-fig,ax=plt.subplots(1,1,figsize=(13,8))
-# plot results
-ax.scatter(results_df['evaporation_pct_change'], results_df['transpiration_pct_change'])
-# labels
-ax.set_xlabel('Evaporation Change (%)',fontsize=18)
-ax.set_ylabel('Transpiration Change (%)',fontsize=18)
-#ax.set_xlim(-100,100)
-#ax.set_ylim(-100, 100)
-# show plot
-fig.show() 
-
-fig,ax=plt.subplots(1,1,figsize=(13,8))
-# plot results
-ax.scatter(results_df['evaporation_pct_change'], results_df['transpiration_pct_change'])
-# labels
-ax.set_xlabel('Evaporation Change (%)',fontsize=18)
-ax.set_ylabel('Transpiration Change (%)',fontsize=18)
-#ax.set_xlim(-100,100)
-#ax.set_ylim(-100, 100)
-# show plot
-fig.show() 
-
+    # #create plot of root growth
+    # fig,ax=plt.subplots(1,1,figsize=(13,8))
+    # # plot results
+    # #ax.scatter(results['health_crop_growth_df']['dap'], results['health_crop_growth_df']['z_root'], color = 'lightskyblue')
+    # ax.scatter(results['base_water_df']['dap'], results['base_crop_growth_df']['z_root'], color = 'khaki')
+    # # labels
+    # ax.set_xlabel('Day after planting)',fontsize=18)
+    # ax.set_ylabel('Root Depth (m)',fontsize=18)
+    # # show plot
+    # fig.show()  
+    
+    # #create plot of transpiration
+    # fig,ax=plt.subplots(1,1,figsize=(13,8))
+    # # plot results
+    # #ax.scatter(results['health_crop_growth_df']['dap'], results['health_crop_growth_df']['z_root'], color = 'lightskyblue')
+    # ax.scatter(results['base_flux_df']['dap'], results['base_flux_df']['Tr'], color = 'khaki')
+    # # labels
+    # ax.set_xlabel('Day after planting)',fontsize=18)
+    # ax.set_ylabel('Transpiration (mm)',fontsize=18)
+    # # show plot
+    # fig.show() 
