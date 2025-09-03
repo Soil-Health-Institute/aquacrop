@@ -190,8 +190,8 @@ def analyze_soil_health_impacts(weather_data: pd.DataFrame,
                                            is_calcareous=False,
                                            rew=9,
                                            z_res=zres)
-    soil_base.profile['th_dry'] = 0
-    soil_health.profile['th_dry'] = 0
+    #soil_base.profile['th_dry'] = 0
+    #soil_health.profile['th_dry'] = 0
     
     # create crop object
     crop = Crop(c_name = crop, planting_date = planting_date)
@@ -645,11 +645,14 @@ if __name__ == "__main__":
     filepath = get_filepath('C:/Users/KadeFlynn/OneDrive - Soil Health Institute/Documents/aquacrop tests/weather_arkansas_lat35.91_long-90.68_elev122.csv')
     weather_data = prepare_weather_minimum_data(
         weather_file_path=filepath,
-        latitude=35.9,
+        latitude=35.91,
         longitude=-90.68,
         elevation=122
     )
-    
+    weather_data
+    #weather_data = pd.read_csv('C:/Users/KadeFlynn/OneDrive - Soil Health Institute/Documents/aquacrop tests/weather_gridmet_nebraska.csv')
+    #weather_data['Date'] = pd.to_datetime(weather_data['Date'])
+
     # Define analysis parameters
     years = [1999, 2012]  # Multiple years
     #years = list(range(1988, 2019))
@@ -658,12 +661,12 @@ if __name__ == "__main__":
     
     # Run comprehensive analysis
     results_df = run_multiyear_analysis(
-        name = "Arkansas",
+        name = "ArkansasGDD_30days",
         weather_data=weather_data,
         years=years,
         soil_scenarios=soil_scenarios,
         soil_health_scenarios=health_scenarios,
-        crop="Maize",
+        crop="MaizeGDD",
         planting_date="04/20",
         output_path="C:/Users/KadeFlynn/OneDrive - Soil Health Institute/Documents/aquacrop tests/"
     )
