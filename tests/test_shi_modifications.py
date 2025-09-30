@@ -554,12 +554,28 @@ def create_soil_texture_scenarios() -> List[Dict]:
 
     # Sandy Loam, root restricting layer
     scenarios.append({
-        'name': 'Sandy_Loam_Restricting',
+        'name': 'Sandy_Loam_60cm_Restricting',
         'depth_increments': [0.15] * 10,
         'sand_profile': [65]*10,
         'clay_profile': [15]*10,
         'soc_profile': [1]*10,
         'penetrability_profile': [100, 100, 100, 100, 0, 0, 0, 0, 0, 0]
+    })
+    scenarios.append({
+        'name': 'Sandy_Loam_90cm_Restricting',
+        'depth_increments': [0.15] * 10,
+        'sand_profile': [65]*10,
+        'clay_profile': [15]*10,
+        'soc_profile': [1]*10,
+        'penetrability_profile': [100, 100, 100, 100, 100, 100, 0, 0, 0, 0]
+    })
+    scenarios.append({
+        'name': 'Sandy_Loam_120cm_Restricting',
+        'depth_increments': [0.15] * 10,
+        'sand_profile': [65]*10,
+        'clay_profile': [15]*10,
+        'soc_profile': [1]*10,
+        'penetrability_profile': [100, 100, 100, 100, 100, 100, 100, 100, 0, 0]
     })
     
     # Loam
@@ -573,12 +589,28 @@ def create_soil_texture_scenarios() -> List[Dict]:
 
     # Loam, root restricting layer
     scenarios.append({
-        'name': 'Loam_Restricting',
+        'name': 'Loam_60cm_Restricting',
         'depth_increments': [0.15] * 10,
         'sand_profile': [40]*10,
         'clay_profile': [25]*10,
         'soc_profile': [1]*10,
         'penetrability_profile': [100, 100, 100, 100, 0, 0, 0, 0, 0, 0]
+    })
+    scenarios.append({
+        'name': 'Loam_90cm_Restricting',
+        'depth_increments': [0.15] * 10,
+        'sand_profile': [40]*10,
+        'clay_profile': [25]*10,
+        'soc_profile': [1]*10,
+        'penetrability_profile': [100, 100, 100, 100, 100, 100, 0, 0, 0, 0]
+    })
+    scenarios.append({
+        'name': 'Loam_120cm_Restricting',
+        'depth_increments': [0.15] * 10,
+        'sand_profile': [40]*10,
+        'clay_profile': [25]*10,
+        'soc_profile': [1]*10,
+        'penetrability_profile': [100, 100, 100, 100, 100, 100, 100, 100, 0, 0]
     })
     
     # Silty Clay
@@ -592,13 +624,30 @@ def create_soil_texture_scenarios() -> List[Dict]:
 
     # Silty Clay, root restricting layer
     scenarios.append({
-        'name': 'Silty_Clay_Restricting',
+        'name': 'Silty_Clay_60cmRestricting',
         'depth_increments': [0.15] * 10,
         'sand_profile': [10]*10,
         'clay_profile': [45]*10,
         'soc_profile': [1]*10,
         'penetrability_profile': [100, 100, 100, 100, 0, 0, 0, 0, 0, 0]
     })
+    scenarios.append({
+        'name': 'Silty_Clay_90cmRestricting',
+        'depth_increments': [0.15] * 10,
+        'sand_profile': [10]*10,
+        'clay_profile': [45]*10,
+        'soc_profile': [1]*10,
+        'penetrability_profile': [100, 100, 100, 100, 100, 100, 0, 0, 0, 0]
+    })
+    scenarios.append({
+        'name': 'Silty_Clay_90cmRestricting',
+        'depth_increments': [0.15] * 10,
+        'sand_profile': [10]*10,
+        'clay_profile': [45]*10,
+        'soc_profile': [1]*10,
+        'penetrability_profile': [100, 100, 100, 100, 100, 100, 100, 100, 0, 0]
+    })
+    
     
     return scenarios
 
@@ -642,33 +691,33 @@ def create_soil_health_scenarios() -> List[Dict]:
 if __name__ == "__main__":
     # Load weather data (using your existing code)
     #filepath = get_filepath('weather_minimum_lat38.9_lon-83.9_elev291.csv')
-    filepath = get_filepath('C:/Users/KadeFlynn/OneDrive - Soil Health Institute/Documents/aquacrop tests/weather_arkansas_lat35.91_long-90.68_elev122.csv')
+    filepath = get_filepath('C:/Users/KadeFlynn/OneDrive - Soil Health Institute/Documents/aquacrop tests/weather_ohio_lat38.9_lon-83.9_elev291.csv')
     weather_data = prepare_weather_minimum_data(
         weather_file_path=filepath,
-        latitude=35.91,
-        longitude=-90.68,
-        elevation=122
+        latitude=38.9,
+        longitude=-83.9,
+        elevation=391
     )
-    weather_data
+    #weather_data.to_csv('C:/Users/KadeFlynn/OneDrive - Soil Health Institute/Documents/aquacrop tests/weather_arkansas_minimum.csv', index=False)
     #weather_data = pd.read_csv('C:/Users/KadeFlynn/OneDrive - Soil Health Institute/Documents/aquacrop tests/weather_gridmet_nebraska.csv')
     #weather_data['Date'] = pd.to_datetime(weather_data['Date'])
 
     # Define analysis parameters
-    years = [1999, 2012]  # Multiple years
+    years = [2002, 2007]  # Multiple years
     #years = list(range(1988, 2019))
     soil_scenarios = create_soil_texture_scenarios()  # Different soil types
     health_scenarios = create_soil_health_scenarios()  # Different health treatments
     
     # Run comprehensive analysis
     results_df = run_multiyear_analysis(
-        name = "ArkansasGDD_30days",
+        name = "OhioGDD",
         weather_data=weather_data,
         years=years,
         soil_scenarios=soil_scenarios,
         soil_health_scenarios=health_scenarios,
         crop="MaizeGDD",
-        planting_date="04/20",
-        output_path="C:/Users/KadeFlynn/OneDrive - Soil Health Institute/Documents/aquacrop tests/"
+        planting_date="04/15",
+        output_path="C:/Users/KadeFlynn/OneDrive - Soil Health Institute/Documents/aquacrop tests/restriction_depth_data"
     )
     
     # Display summary statistics
@@ -697,18 +746,18 @@ if __name__ == "__main__":
     print(results_df[['year', 'soil_scenario', 'health_scenario', 
                      'transpiration_diff', 'evaporation_diff']].head(10))
     
-    # # # Example of running a single year analysis
+    # # Example of running a single year analysis
     # results, soils = analyze_soil_health_impacts(weather_data = weather_data,
     #                         depth_increments = [0.15]*10,
     #                         sand_profile = [20]*10,
     #                         clay_profile = [15]*10,
     #                         soc_profile = [1]*10,
-    #                         crop = 'Maize',
+    #                         crop = 'MaizeGDD',
     #                         planting_date = '05/01',
-    #                         year =2003,
+    #                         year =2012,
     #                         soc_increase = 10,
     #                         residue_cover = 90,
-    #                         penetrability_profile= [100]*3 + [0]*7)
+    #                         penetrability_profile= [100]*4 + [0]*7)
     #                         #penetrability_profile= [100]*10)
 
     # print(results)
