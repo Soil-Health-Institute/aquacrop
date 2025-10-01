@@ -640,7 +640,7 @@ def create_soil_texture_scenarios() -> List[Dict]:
         'penetrability_profile': [100, 100, 100, 100, 100, 100, 0, 0, 0, 0]
     })
     scenarios.append({
-        'name': 'Silty_Clay_90cmRestricting',
+        'name': 'Silty_Clay_120cmRestricting',
         'depth_increments': [0.15] * 10,
         'sand_profile': [10]*10,
         'clay_profile': [45]*10,
@@ -691,32 +691,32 @@ def create_soil_health_scenarios() -> List[Dict]:
 if __name__ == "__main__":
     # Load weather data (using your existing code)
     #filepath = get_filepath('weather_minimum_lat38.9_lon-83.9_elev291.csv')
-    filepath = get_filepath('C:/Users/KadeFlynn/OneDrive - Soil Health Institute/Documents/aquacrop tests/weather_ohio_lat38.9_lon-83.9_elev291.csv')
+    filepath = get_filepath('C:/Users/KadeFlynn/OneDrive - Soil Health Institute/Documents/aquacrop tests/weather_arkansas_lat35.91_long-90.68_elev122.csv')
     weather_data = prepare_weather_minimum_data(
         weather_file_path=filepath,
-        latitude=38.9,
-        longitude=-83.9,
-        elevation=391
+        latitude=35.91,
+        longitude=-90.68,
+        elevation=122
     )
     #weather_data.to_csv('C:/Users/KadeFlynn/OneDrive - Soil Health Institute/Documents/aquacrop tests/weather_arkansas_minimum.csv', index=False)
     #weather_data = pd.read_csv('C:/Users/KadeFlynn/OneDrive - Soil Health Institute/Documents/aquacrop tests/weather_gridmet_nebraska.csv')
     #weather_data['Date'] = pd.to_datetime(weather_data['Date'])
 
     # Define analysis parameters
-    years = [2002, 2007]  # Multiple years
+    years = [1999, 2012]  # Multiple years
     #years = list(range(1988, 2019))
     soil_scenarios = create_soil_texture_scenarios()  # Different soil types
     health_scenarios = create_soil_health_scenarios()  # Different health treatments
     
     # Run comprehensive analysis
     results_df = run_multiyear_analysis(
-        name = "OhioGDD",
+        name = "ArkansasGDD",
         weather_data=weather_data,
         years=years,
         soil_scenarios=soil_scenarios,
         soil_health_scenarios=health_scenarios,
         crop="MaizeGDD",
-        planting_date="04/15",
+        planting_date="04/20",
         output_path="C:/Users/KadeFlynn/OneDrive - Soil Health Institute/Documents/aquacrop tests/restriction_depth_data"
     )
     
